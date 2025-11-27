@@ -1,0 +1,11 @@
+{
+  "name": "RevealAI",
+  "description": "Uses C2PA metadata to reveal AI-generated content in images.",
+  "version": "1.0",
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "index.html"
+  }
+}
