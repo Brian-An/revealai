@@ -12,31 +12,24 @@ export const Popup: React.FC = () => {
   const [results, setResults] = useState<ImageAnalysisResult[]>([]);
   const [filter, setFilter] = useState<"all" | "ai" | "authentic">("all");
 
-  const startScan = () => {
+  const startScan = async () => {
     setStatus({ scanning: true, totalImages: 0, analyzedImages: 0 });
-    // TODO: Implement actual scanning logic
-    // This is a placeholder for demonstration
-    setTimeout(() => {
-      const mockResults: ImageAnalysisResult[] = [
-        {
-          url: "https://via.placeholder.com/400x300",
-          hasC2PA: false,
-          isAIGenerated: true,
-          confidence: 0.92,
-        },
-        {
-          url: "https://via.placeholder.com/400x300/00ff00",
-          hasC2PA: true,
-          isAIGenerated: false,
-          metadata: {
-            creator: "John Doe",
-            software: "Adobe Photoshop",
-          },
-        },
-      ];
-      setResults(mockResults);
-      setStatus({ scanning: false, totalImages: 2, analyzedImages: 2 });
-    }, 1500);
+    setResults([]);
+
+    try {
+      const { scanCurrentPage } = await import("../utils/imageAnalyzer");
+      const analysisResults = await scanCurrentPage();
+
+      setResults(analysisResults);
+      setStatus({
+        scanning: false,
+        totalImages: analysisResults.length,
+        analyzedImages: analysisResults.length,
+      });
+    } catch (error) {
+      console.error("Error scanning:", error);
+      setStatus({ scanning: false, totalImages: 0, analyzedImages: 0 });
+    }
   };
 
   const filteredResults = results.filter((result) => {
