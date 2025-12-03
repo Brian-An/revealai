@@ -54,7 +54,7 @@ export const Popup: React.FC = () => {
     <div className="w-[400px] h-[600px] bg-gray-50 flex flex-col">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 p-4">
-        <h1 className="text-xl font-bold text-gray-900 mb-1">C2PA Finder</h1>
+        <h1 className="text-xl font-bold text-gray-900 mb-1">RevealAI</h1>
         <p className="text-sm text-gray-600">Detect AI-generated images</p>
       </div>
 
