@@ -1,168 +1,264 @@
-import React, { useState } from "react";
-import type { ImageAnalysisResult, AnalysisStatus } from "../types";
+import { useEffect, useRef, useState } from "react";
 import { ImageResult } from "../components/ImageResult";
 import { EmptyState } from "../components/EmptyState";
+import { Icon } from "../components/Icon";
+import { ScanError, scanCurrentPage } from "../utils/imageAnalyzer";
+import { disposeReader } from "../utils/c2pa";
+import type { ImageAnalysisResult, ScanProgress } from "../types";
 
-export const Popup: React.FC = () => {
-  const [status, setStatus] = useState<AnalysisStatus>({
-    scanning: false,
-    totalImages: 0,
-    analyzedImages: 0,
-  });
-  const [results, setResults] = useState<ImageAnalysisResult[]>([]);
-  const [filter, setFilter] = useState<"all" | "ai" | "authentic">("all");
+type Phase = "ready" | "scanning" | "complete" | "error";
+interface ScanState extends ScanProgress {
+  phase: Phase;
+  error?: { title: string; description: string };
+}
+const initial: ScanState = {
+  phase: "ready",
+  total: 0,
+  hostname: "",
+  limited: false,
+  results: [],
+};
 
-  const startScan = async () => {
-    setStatus({ scanning: true, totalImages: 0, analyzedImages: 0 });
-    setResults([]);
+function ScanContent({
+  scan,
+  results,
+}: {
+  scan: ScanState;
+  results: ImageAnalysisResult[];
+}) {
+  if (scan.phase === "error" && scan.error)
+    return (
+      <EmptyState
+        title={scan.error.title}
+        description={scan.error.description}
+        error
+      />
+    );
+  if (scan.results.length > 0)
+    return results.length ? (
+      <div className="result-list">
+        {results.map((result) => (
+          <ImageResult key={result.url} result={result} />
+        ))}
+      </div>
+    ) : (
+      <EmptyState
+        title="No matching images"
+        description="Choose All to see every image checked on this page."
+      />
+    );
+  if (scan.phase === "scanning")
+    return (
+      <div className="empty-state">
+        <div className="scan-ring" aria-hidden="true" />
+        <p>Looking for Content Credentials</p>
+      </div>
+    );
+  if (scan.phase === "complete")
+    return (
+      <EmptyState
+        title="No eligible images"
+        description="This page has no loaded images large enough to check. Try a page with photos or illustrations."
+      />
+    );
+  return (
+    <EmptyState
+      title="Curious about an image?"
+      description="Scan this page to see what its images reveal about their origin."
+    />
+  );
+}
 
+function ScanControls({
+  scan,
+  onScan,
+}: {
+  scan: ScanState;
+  onScan: () => void;
+}) {
+  const scanning = scan.phase === "scanning";
+  const complete = scan.phase === "complete" && scan.results.length > 0;
+  return (
+    <section className="hero" aria-label="Scan images">
+      <h1>
+        {scanning ? (
+          "Looking a little closer."
+        ) : complete ? (
+          "A little more context."
+        ) : (
+          <>
+            A closer look.
+            <br />A clearer picture.
+          </>
+        )}
+      </h1>
+      <p>
+        {scanning
+          ? "Checking image origin information on this page."
+          : complete
+            ? "Here’s what this page’s images reveal."
+            : "Check this page’s images for signs of AI."}
+      </p>
+      <button className="scan-button" onClick={onScan} disabled={scanning}>
+        <Icon name="scan" />
+        {scanning
+          ? "Scanning page…"
+          : scan.phase === "ready"
+            ? "Scan page"
+            : "Scan again"}
+      </button>
+      {scanning && (
+        <div className="scan-progress">
+          <progress
+            aria-label="Images checked"
+            value={scan.results.length}
+            max={scan.total || 1}
+          />
+          <div>
+            <span>Checking images</span>
+            <span>
+              {scan.results.length} / {scan.total || "…"}
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function Popup() {
+  const [scan, setScan] = useState<ScanState>(initial);
+  const [filter, setFilter] = useState<"all" | "ai" | "unknown">("all");
+  const controller = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const cancel = () => {
+      controller.current?.abort();
+      disposeReader();
+    };
+    window.addEventListener("pagehide", cancel);
+    return () => {
+      cancel();
+      window.removeEventListener("pagehide", cancel);
+    };
+  }, []);
+
+  async function startScan() {
+    controller.current?.abort();
+    disposeReader();
+    const current = new AbortController();
+    controller.current = current;
+    setFilter("all");
+    setScan({ ...initial, phase: "scanning" });
     try {
-      const { scanCurrentPage } = await import("../utils/imageAnalyzer");
-      const analysisResults = await scanCurrentPage();
-
-      setResults(analysisResults);
-      setStatus({
-        scanning: false,
-        totalImages: analysisResults.length,
-        analyzedImages: analysisResults.length,
-      });
+      const page = await scanCurrentPage((progress) => {
+        if (!current.signal.aborted)
+          setScan({ ...progress, phase: "scanning" });
+      }, current.signal);
+      if (!current.signal.aborted)
+        setScan({ ...page, total: page.results.length, phase: "complete" });
     } catch (error) {
-      console.error("Error scanning:", error);
-      setStatus({ scanning: false, totalImages: 0, analyzedImages: 0 });
+      if (!current.signal.aborted)
+        setScan({
+          ...initial,
+          phase: "error",
+          error: {
+            title:
+              error instanceof ScanError
+                ? error.title
+                : "The scan couldn’t finish",
+            description:
+              error instanceof Error
+                ? error.message
+                : "Try reloading this page and scanning again.",
+          },
+        });
     }
+  }
+
+  const scanning = scan.phase === "scanning";
+  const hasResults = scan.results.length > 0;
+  const counts = {
+    all: scan.results.length,
+    ai: scan.results.filter((result) => result.verdict === "ai").length,
+    unknown: scan.results.filter((result) => result.verdict === "unknown")
+      .length,
   };
-
-  const filteredResults = results.filter((result) => {
-    if (filter === "ai") return result.isAIGenerated === true;
-    if (filter === "authentic") return result.hasC2PA && !result.isAIGenerated;
-    return true;
-  });
-
-  const aiCount = results.filter((r) => r.isAIGenerated === true).length;
-  const authenticCount = results.filter(
-    (r) => r.hasC2PA && !r.isAIGenerated
+  const unavailable = scan.results.filter(
+    (result) => result.verdict === "error",
   ).length;
+  const results = scan.results.filter(
+    (result) => filter === "all" || result.verdict === filter,
+  );
 
   return (
-    <div className="w-[400px] h-[600px] bg-gray-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4">
-        <h1 className="text-xl font-bold text-gray-900 mb-1">RevealAI</h1>
-        <p className="text-sm text-gray-600">Detect AI-generated images</p>
-      </div>
-
-      {/* Scan Button */}
-      <div className="p-4 bg-white border-b border-gray-200">
-        <button
-          onClick={startScan}
-          disabled={status.scanning}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          {status.scanning ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>Scanning page...</span>
-            </>
-          ) : (
-            <>
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                />
-              </svg>
-              <span>Scan Current Page</span>
-            </>
+    <main className="popup">
+      <header className="popup-header">
+        <div className="brand">
+          <Icon name="eye" />
+          <span>RevealAI</span>
+        </div>
+        <span className="device">
+          <Icon name="lock" />
+          On device
+        </span>
+      </header>
+      <ScanControls scan={scan} onScan={startScan} />
+      {hasResults && (
+        <div className="results-top">
+          <div className="page-context">
+            <span title={scan.hostname}>{scan.hostname}</span>
+            <strong>
+              {scan.results.length}{" "}
+              {scan.results.length === 1 ? "image" : "images"} checked
+            </strong>
+          </div>
+          {unavailable > 0 && (
+            <p className="scan-note">
+              {unavailable} {unavailable === 1 ? "image" : "images"} could not
+              be checked.
+            </p>
           )}
-        </button>
-      </div>
-
-      {/* Stats */}
-      {results.length > 0 && (
-        <div className="p-4 bg-white border-b border-gray-200">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="bg-gray-50 rounded-lg p-2">
-              <div className="text-2xl font-bold text-gray-900">
-                {results.length}
-              </div>
-              <div className="text-xs text-gray-600">Total</div>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-2">
-              <div className="text-2xl font-bold text-purple-700">
-                {aiCount}
-              </div>
-              <div className="text-xs text-purple-600">AI Generated</div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-2">
-              <div className="text-2xl font-bold text-green-700">
-                {authenticCount}
-              </div>
-              <div className="text-xs text-green-600">Authentic</div>
-            </div>
-          </div>
+          {scan.limited && (
+            <p className="scan-note">
+              Showing the first 100 unique images on this page.
+            </p>
+          )}
+          <nav className="filter-tabs" aria-label="Filter image results">
+            {(["all", "ai", "unknown"] as const).map((value) => (
+              <button
+                key={value}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+              >
+                {value === "all"
+                  ? "All"
+                  : value === "ai"
+                    ? "AI indicated"
+                    : "Unknown"}
+                <span>{counts[value]}</span>
+              </button>
+            ))}
+          </nav>
         </div>
       )}
-
-      {/* Filter Tabs */}
-      {results.length > 0 && (
-        <div className="p-4 bg-white border-b border-gray-200">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilter("all")}
-              className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-colors ${
-                filter === "all"
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilter("ai")}
-              className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-colors ${
-                filter === "ai"
-                  ? "bg-purple-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              AI Only
-            </button>
-            <button
-              onClick={() => setFilter("authentic")}
-              className={`flex-1 py-1.5 px-3 text-sm font-medium rounded-md transition-colors ${
-                filter === "authentic"
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              Authentic
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Results */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {filteredResults.length === 0 && !status.scanning && (
-          <EmptyState
-            title="No images found"
-            description="Click 'Scan Current Page' to analyze images on this webpage"
-          />
-        )}
-
-        <div className="grid gap-3">
-          {filteredResults.map((result, index) => (
-            <ImageResult key={index} result={result} />
-          ))}
-        </div>
+      <div className="results-content" aria-busy={scanning}>
+        <ScanContent scan={scan} results={results} />
       </div>
-    </div>
+      <p className="sr-only" role="status">
+        {scanning
+          ? `Checking ${scan.results.length} of ${scan.total} images.`
+          : scan.phase === "complete"
+            ? `${scan.results.length} images checked. ${counts.ai} AI indications. ${unavailable} unavailable.`
+            : scan.error?.title}
+      </p>
+      <footer className="popup-footer">
+        <span>
+          <Icon name="lock" />
+          Images stay in your browser
+        </span>
+        <p>Missing evidence doesn’t mean an image is real.</p>
+      </footer>
+    </main>
   );
-};
+}
