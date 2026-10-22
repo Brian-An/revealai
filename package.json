@@ -1,5 +1,5 @@
 {
-  "name": "c2pa-finder",
+  "name": "revealai",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,27 +7,31 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
+    "@contentauth/c2pa-types": "0.7.6",
+    "@contentauth/c2pa-utilities": "0.3.2",
+    "@contentauth/c2pa-wasm": "0.13.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.2.1",
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.64.1",
     "@types/chrome": "^0.1.32",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
-    "autoprefixer": "^10.4.22",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
     "globals": "^16.5.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.18",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"

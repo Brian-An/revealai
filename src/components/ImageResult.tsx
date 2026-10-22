@@ -1,49 +1,93 @@
-import React from "react";
+import { useState } from "react";
 import type { ImageAnalysisResult } from "../types";
 import { StatusBadge } from "./StatusBadge";
+import { Icon } from "./Icon";
 
-interface ImageResultProps {
-  result: ImageAnalysisResult;
-}
-
-export const ImageResult: React.FC<ImageResultProps> = ({ result }) => {
+export function ImageResult({ result }: { result: ImageAnalysisResult }) {
+  const [brokenPreview, setBrokenPreview] = useState(false);
+  const title = result.alt || "Image from this page";
+  const openable = /^https?:\/\//i.test(result.url);
   return (
-    <div className="group bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-      <div className="aspect-video bg-gray-100 relative overflow-hidden">
-        <img
-          src={result.url}
-          alt="Analyzed image"
-          className="w-full h-full object-cover"
-          loading="lazy"
-        />
-      </div>
-
-      <div className="p-3 space-y-2">
-        <div className="flex items-center justify-between">
-          <StatusBadge
-            isAIGenerated={result.isAIGenerated}
-            hasC2PA={result.hasC2PA}
-            confidence={result.confidence}
-          />
+    <article className="image-result">
+      <div className="result-line">
+        <div className="thumbnail">
+          {brokenPreview ? (
+            <Icon name="photo" />
+          ) : (
+            <img
+              src={result.url}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setBrokenPreview(true)}
+            />
+          )}
         </div>
-
-        {result.metadata && (
-          <div className="text-xs text-gray-600 space-y-1">
-            {result.metadata.creator && (
-              <div className="flex items-center gap-1">
-                <span className="font-medium">Creator:</span>
-                <span className="truncate">{result.metadata.creator}</span>
-              </div>
+        <div className="result-body">
+          <h3 title={title}>{title}</h3>
+          <StatusBadge verdict={result.verdict} />
+          {result.verdict !== "error" && (
+            <p className="result-summary">{result.summary}</p>
+          )}
+        </div>
+      </div>
+      <details className="result-details">
+        <summary>Why this result</summary>
+        <div className="evidence">
+          <p>{result.explanation}</p>
+          <dl>
+            <dt>Credentials</dt>
+            <dd>
+              {result.validation === "trusted"
+                ? "Signature, image binding and signer verified"
+                : result.validation === "missing"
+                  ? "Not found"
+                  : "Not verified"}
+            </dd>
+            {result.software && (
+              <>
+                <dt>Source says</dt>
+                <dd>{result.software}</dd>
+              </>
             )}
-            {result.metadata.software && (
-              <div className="flex items-center gap-1">
-                <span className="font-medium">Software:</span>
-                <span className="truncate">{result.metadata.software}</span>
-              </div>
+            {result.issuer && (
+              <>
+                <dt>Signer</dt>
+                <dd>{result.issuer}</dd>
+              </>
+            )}
+            <dt>Image</dt>
+            <dd>
+              {result.width} × {result.height}
+            </dd>
+          </dl>
+          {result.validation !== "missing" &&
+            result.validation !== "unavailable" && (
+              <p className="validation-note">
+                Offline validation with the bundled C2PA trust list. Current
+                certificate revocation is not checked.
+              </p>
+            )}
+          <div className="evidence-links">
+            {openable && (
+              <a href={result.url} target="_blank" rel="noreferrer">
+                Open original ↗
+              </a>
+            )}
+            {result.verdict !== "ai" && (
+              <a href="https://synthid.com/" target="_blank" rel="noreferrer">
+                Open SynthID checker ↗
+              </a>
             )}
           </div>
-        )}
-      </div>
-    </div>
+          {result.verdict !== "ai" && (
+            <p className="validation-note">
+              Submit the original image there. RevealAI has not run a watermark
+              check.
+            </p>
+          )}
+        </div>
+      </details>
+    </article>
   );
-};
+}
